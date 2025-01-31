@@ -14,6 +14,28 @@ st.set_page_config(
 st.title("PDF Name Overlay Tool")
 st.write("Upload your Excel file with IDs and names, and a PDF file to add searchable names to it.")
 
+def clean_and_split_names(name):
+    """Clean and split names if multiple people are listed"""
+    if pd.isna(name):
+        return []
+    
+    # Convert to string in case it's a number or other type
+    name = str(name).strip()
+    if not name:  # Empty string
+        return []
+        
+    # Split on common separators and clean each name
+    names = []
+    # First split by newline if present (for merged cells)
+    for part in name.split('\n'):
+        # Then split by comma or semicolon if present
+        for subpart in part.split(','):
+            for final_part in subpart.split(';'):
+                cleaned = final_part.strip()
+                if cleaned:  # Only add non-empty names
+                    names.append(cleaned)
+    return names
+
 def process_files(excel_file, pdf_file):
     # Create temporary files to work with
     with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_excel:
@@ -31,11 +53,26 @@ def process_files(excel_file, pdf_file):
         # Read the Excel file
         df = pd.read_excel(excel_path)
         
-        # Clean the data: remove rows with NA values and convert to integers
-        df = df.dropna(subset=['Sorszám'])  # Remove rows where ID is missing
-        df['Sorszám'] = df['Sorszám'].astype(float).astype(int)
-        id_to_name = dict(zip(df['Sorszám'], df['Név']))
-        st.write(f"Loaded {len(id_to_name)} names from Excel")
+        # Clean the data and create a dictionary with lists of names
+        id_to_names = {}
+        for _, row in df.iterrows():
+            try:
+                id_num = int(float(row['Sorszám'])) if pd.notna(row['Sorszám']) else None
+                if id_num is not None:  # Only process valid IDs
+                    names = clean_and_split_names(row['Név'])
+                    if names:  # Only add if there are valid names
+                        id_to_names[id_num] = names
+            except (ValueError, TypeError):
+                continue  # Skip invalid IDs
+                
+        st.write(f"Loaded {len(id_to_names)} IDs with names from Excel")
+        
+        # Display some statistics
+        total_names = sum(len(names) for names in id_to_names.values())
+        st.write(f"Total number of names: {total_names}")
+        multi_name_count = sum(1 for names in id_to_names.values() if len(names) > 1)
+        if multi_name_count > 0:
+            st.write(f"Found {multi_name_count} IDs with multiple names")
 
         # Open the PDF
         pdf_doc = fitz.open(pdf_path)
@@ -61,16 +98,16 @@ def process_files(excel_file, pdf_file):
                                 id_num = int(float(text))
                                 x0, y0 = span["origin"]
                                 
-                                # Get name from Excel data if ID exists
-                                if id_num in id_to_name:
-                                    name = id_to_name[id_num]
-                                    if pd.isna(name):  # Skip if name is NA
-                                        continue
+                                # Get names from Excel data if ID exists
+                                if id_num in id_to_names:
+                                    names = id_to_names[id_num]
+                                    # Join all names with a separator
+                                    combined_text = " | ".join(names + [str(id_num)])
                                     
                                     # Add invisible but searchable text
                                     page.insert_text(
                                         (x0, y0),
-                                        f"{name} {id_num}",
+                                        combined_text,
                                         fontsize=0.1,    # Very small, practically invisible
                                         color=(1, 1, 1),  # White color, invisible on white background
                                         render_mode=0
