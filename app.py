@@ -19,12 +19,18 @@ def create_text_preview(text, font_size, text_color, bg_color, bg_opacity):
     img = Image.new('RGBA', (400, 100), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
     
+    # Convert colors from float (0-1) to integer (0-255)
+    bg_color_int = tuple(int(c * 255) for c in bg_color)
+    text_color_int = tuple(int(c * 255) for c in text_color)
+    
+    # Create background color with opacity
+    bg_with_opacity = (*bg_color_int, int(bg_opacity * 255))
+    
     # Draw background
-    bg_with_opacity = (*bg_color, int(bg_opacity * 255))
     draw.rectangle([(0, 0), (400, 100)], fill=bg_with_opacity)
     
     # Draw text
-    draw.text((10, 10), text, fill=text_color, size=font_size)
+    draw.text((10, 10), text, fill=text_color_int, font=None, size=font_size)
     return img
 
 def process_files(excel_file, pdf_file, text_settings):
